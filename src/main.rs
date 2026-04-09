@@ -58,19 +58,40 @@ impl State {
 
         // Initialize helper fields for simulated annealing
         self.temp = 1000.0;
-        self.dist = self.calculate_total_dist();
+        self.calculate_total_dist();
+    }
+
+    fn randomize_tour(&mut self) {
+        let mut available_cities = Vec::new();
+
+        self.tour.clear();
+
+        // Initializing the cities
+        for i in 0..self.n {
+            available_cities.push(i);
+        }
+
+        while !available_cities.is_empty() {
+            let tour_index = self.rng.random_range(0..available_cities.len());
+            let city_index = available_cities.swap_remove(tour_index);
+            self.tour.push(city_index);
+            if available_cities.is_empty() {break;}
+        }
+
+        self.temp = 1000.0;
+        self.calculate_total_dist();
     }
 
     // simulated annealing
-    fn update_sa(&mut self) {
-        if self.temp < 0.01 { return; }
+    fn update_sa(&mut self) -> bool {
+        if self.temp < 0.01 { return false; }
         
         // randomly choosing 2 city indexes
         let i = self.rng.random_range(0..self.n);
         let j = self.rng.random_range(0..self.n);
         
         // if 2 same cities are chosen, dont do anything
-        if i == j { return; }
+        if i == j { return true; }
         let (smaller, bigger) = if i > j {(j, i)} else {(i, j)};
         let current_dist = self.calculate_total_dist();
 
@@ -92,7 +113,8 @@ impl State {
         }
 
         // cooling down
-        self.temp *= 0.9999;
+        self.temp *= 0.9995;
+        true
     }
 
     fn display(&mut self) {
@@ -108,6 +130,8 @@ impl State {
             let city = self.cities[i];
             draw_circle(city[0], city[1], 10.0, GREEN);
         }
+
+        draw_text(&format!("Temp: {}", self.temp), 20.0, 20.0, 30.0, BLACK);
     }
 
     fn calculate_total_dist(&mut self) -> f32 {
@@ -125,7 +149,7 @@ impl State {
 #[macroquad::main("Travelling Salesman Problem")]
 async fn main() {
 
-    let mut state = State::new(100);
+    let mut state = State::new(10);
     state.randomize();
     let mut running = false;
     let mut alg = Alg::SA;
@@ -136,23 +160,28 @@ async fn main() {
         if is_key_pressed(KeyCode::Escape) {
             break;
         }
-        if is_key_pressed(KeyCode::R) {
+        if is_key_pressed(KeyCode::H) {
             state.randomize();
+            running = false;
         }
         if is_key_pressed(KeyCode::A) {
             alg = Alg::SA;
             running = true;
         }
+        if is_key_pressed(KeyCode::R) {
+            state.randomize_tour();
+            running = false;
+        }
 
         // Rendering
         clear_background(LIGHTGRAY);
-
-        draw_text("Hello, Macroquad!", 20.0, 20.0, 30.0, DARKGRAY);
         
         state.display();
         if running == true {
             for _i in 0..100 {
-                state.update_sa();
+                if !state.update_sa() {
+                    running = false;
+                }
             }
         }
 
