@@ -19,19 +19,17 @@ struct State {
 
 impl State {
     fn new(n: usize) -> Self {
-        let mut rng = rng();
         Self {
             cities: Vec::new(),
             tour: Vec::new(),
             n,
             temp: 1000.0,
             dist: 0.0,
-            rng,
+            rng: rng(),
         }
     }
 
     fn randomize(&mut self) {
-        let mut rng = rng();
         self.cities.clear();
         self.tour.clear();
 
@@ -42,12 +40,9 @@ impl State {
 
         // Initializing the cities
         for i in 0..self.n {
-            let xy_min = BORDER;
-            let x_max = w-BORDER;
-            let y_max = h-BORDER;
             let city: [f32; 2] = [
-                rng.random_range(BORDER..(w - BORDER)),
-                rng.random_range(BORDER..(h - BORDER)),
+                self.rng.random_range(BORDER..(w - BORDER)),
+                self.rng.random_range(BORDER..(h - BORDER)),
             ];
             self.cities.push(city);
             available_cities.push(i);
@@ -55,7 +50,7 @@ impl State {
 
         // Initializing the tour
         while !available_cities.is_empty() {
-            let tour_index = rng.random_range(0..available_cities.len());
+            let tour_index = self.rng.random_range(0..available_cities.len());
             let city_index = available_cities.swap_remove(tour_index);
             self.tour.push(city_index);
             if available_cities.is_empty() {break;}
@@ -71,8 +66,8 @@ impl State {
         if self.temp < 0.01 { return; }
         
         // randomly choosing 2 city indexes
-        let mut i = self.rng.random_range(0..self.n);
-        let mut j = self.rng.random_range(0..self.n);
+        let i = self.rng.random_range(0..self.n);
+        let j = self.rng.random_range(0..self.n);
         
         // if 2 same cities are chosen, dont do anything
         if i == j { return; }
@@ -97,7 +92,7 @@ impl State {
         }
 
         // cooling down
-        self.temp *= 0.9995;
+        self.temp *= 0.9999;
     }
 
     fn display(&mut self) {
