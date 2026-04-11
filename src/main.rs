@@ -6,6 +6,7 @@ const BORDER: f32 = 50.0;
 enum Alg {
     SA,
     CLASSICAL,
+    TWO_OPT,
 }
 
 struct State {
@@ -15,6 +16,8 @@ struct State {
     temp: f64,
     dist: f32,
     rng: ThreadRng,
+    running: bool,
+    alg: Alg,
 }
 
 impl State {
@@ -26,6 +29,8 @@ impl State {
             temp: 1000.0,
             dist: 0.0,
             rng: rng(),
+            running: false,
+            alg: Alg::SA,
         }
     }
 
@@ -58,7 +63,7 @@ impl State {
 
         // Initialize helper fields for simulated annealing
         self.temp = 1000.0;
-        self.calculate_total_dist();
+        self.dist = self.calculate_total_dist();
     }
 
     fn randomize_tour(&mut self) {
@@ -79,12 +84,13 @@ impl State {
         }
 
         self.temp = 1000.0;
-        self.calculate_total_dist();
+        self.dist = self.calculate_total_dist();
+        
     }
 
     // simulated annealing
     fn update_sa(&mut self) -> bool {
-        if self.temp < 0.01 { return false; }
+        if self.temp < 0.00001 { return false; }
         
         // randomly choosing 2 city indexes
         let i = self.rng.random_range(0..self.n);
@@ -101,20 +107,52 @@ impl State {
         let next_dist = self.calculate_total_dist();
 
         // checking if we should accept the new tour
-        if next_dist > current_dist {
+        let mut accept = false;
+        if next_dist < current_dist {
+            accept = true;
+        } else {
             let delta = (next_dist - current_dist) as f64;
             let acceptance_prob = (-delta / self.temp).exp();
-
-            // checking if we should accept the new tour based on current temperature
-            if self.rng.random_range(0.0..=1.0) > acceptance_prob {
-                self.tour[smaller..=bigger].reverse();
-                self.dist = current_dist;
+            if self.rng.random_range(0.0..=1.0) < acceptance_prob {
+                accept = true;
             }
         }
 
+        if accept {
+            self.dist = next_dist;
+        } else {
+            // Undo the change and keep the old distance
+            self.tour[smaller..=bigger].reverse();
+            self.dist = current_dist;
+        }
+
         // cooling down
-        self.temp *= 0.9995;
+        self.temp *= 0.9998;
         true
+    }
+
+    fn update_two_opt(&mut self) -> bool {
+        let mut best_dist = self.calculate_total_dist();
+        let mut flip_happened = false;
+        for i in 0..(self.n-1) {
+            for j in (i+1)..self.n {
+                // 2-opt. reversing a small portion of the tour to remove tangles
+                self.tour[i..=j].reverse();
+
+                let next_dist = self.calculate_total_dist();
+
+                // checking if we should accept the new tour
+                if next_dist > best_dist {
+                    self.tour[i..=j].reverse();
+                }
+                else {
+                    best_dist = next_dist;
+                    flip_happened = true;
+                }
+            }
+        }
+        self.dist = best_dist;
+        flip_happened
     }
 
     fn display(&mut self) {
@@ -131,7 +169,13 @@ impl State {
             draw_circle(city[0], city[1], 10.0, GREEN);
         }
 
-        draw_text(&format!("Temp: {}", self.temp), 20.0, 20.0, 30.0, BLACK);
+        let running_text = if self.running {&"State: running"} else {&"State: Done"};
+        let running_color = if self.running {RED} else {DARKGREEN};
+        let running_dims = measure_text(running_text, None, 30, 1.0);
+
+        draw_text(&format!("Temp: {:.5}", self.temp), 20.0, 20.0, 30.0, BLACK);
+        draw_text(&format!("Distance: {:.2}", self.dist), 20.0, 40.0, 30.0, BLACK);
+        draw_text(running_text, screen_width() - 20.0 - running_dims.width, 20.0, 30.0, running_color);
     }
 
     fn calculate_total_dist(&mut self) -> f32 {
@@ -141,7 +185,6 @@ impl State {
             let c2 = self.cities[self.tour[(i + 1)%self.tour.len()]];
             dist += ((c1[0] - c2[0]).powi(2) + (c1[1] - c2[1]).powi(2)).sqrt();
         }
-        self.dist = dist;
         dist
     }
 }
@@ -149,10 +192,8 @@ impl State {
 #[macroquad::main("Travelling Salesman Problem")]
 async fn main() {
 
-    let mut state = State::new(10);
+    let mut state = State::new(100);
     state.randomize();
-    let mut running = false;
-    let mut alg = Alg::SA;
 
     // Main loop
     loop {
@@ -162,25 +203,41 @@ async fn main() {
         }
         if is_key_pressed(KeyCode::H) {
             state.randomize();
-            running = false;
+            state.running = false;
         }
         if is_key_pressed(KeyCode::A) {
-            alg = Alg::SA;
-            running = true;
+            state.alg = Alg::SA;
+            state.running = true;
+        }
+        if is_key_pressed(KeyCode::T) {
+            state.alg = Alg::TWO_OPT;
+            state.running = true;
         }
         if is_key_pressed(KeyCode::R) {
             state.randomize_tour();
-            running = false;
+            state.running = false;
+        }
+        if is_key_pressed(KeyCode::S) {
+            state.running = false;
         }
 
         // Rendering
         clear_background(LIGHTGRAY);
         
         state.display();
-        if running == true {
-            for _i in 0..100 {
-                if !state.update_sa() {
-                    running = false;
+        if state.running == true {
+            if matches!(state.alg, Alg::SA) {
+                for _i in 0..100 {
+                    if !state.update_sa() {
+                        state.running = false;
+                    }
+                }
+            }
+            else if matches!(state.alg, Alg::TWO_OPT) {
+                for _i in 0..1 {
+                    if !state.update_two_opt() {
+                        state.running = false;
+                    }
                 }
             }
         }
