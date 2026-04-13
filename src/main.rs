@@ -1,7 +1,9 @@
 use macroquad::prelude::*;
 use ::rand::{rng, RngExt, rngs::ThreadRng};
+use std::time::Instant;
 
 const BORDER: f32 = 50.0;
+const DEBUG_OUTPUT: bool = true;
 
 enum Alg {
     SA,
@@ -151,6 +153,7 @@ impl State {
                 }
             }
         }
+        if self.dist == best_dist {return false;}
         self.dist = best_dist;
         flip_happened
     }
@@ -187,13 +190,226 @@ impl State {
         }
         dist
     }
+
+    fn add_city(&mut self) {
+        let city: [f32; 2] = [
+            self.rng.random_range(BORDER..(screen_width() - BORDER)),
+            self.rng.random_range(BORDER..(screen_height() - BORDER)),
+        ];
+        self.cities.push(city);
+        self.tour.push(self.n);
+        self.n += 1;
+        self.dist = self.calculate_total_dist();
+    }
+
+    // Held-Karp (Classical) exact dynamic programming algorithm
+    fn update_classical(&mut self) -> bool {
+        // We cap it at 23 cities to prevent integer overflow and Out-Of-Memory crashes.
+        if self.n > 23 {
+            println!("N is too large for Held-Karp (N > 23). Lower N to use this algorithm.");
+            return false;
+        }
+
+        let n = self.n;
+        
+        // Precompute the distance matrix
+        let mut dist = vec![vec![0.0_f32; n]; n];
+        for i in 0..n {
+            for j in 0..n {
+                let c1 = self.cities[i];
+                let c2 = self.cities[j];
+                dist[i][j] = ((c1[0] - c2[0]).powi(2) + (c1[1] - c2[1]).powi(2)).sqrt();
+            }
+        }
+
+        // DP table and parent array setup for path reconstruction
+        // dp[mask][i] = min distance to visit all cities in 'mask', ending at city 'i'
+        let mut dp = vec![vec![f32::INFINITY; n]; 1 << n];
+        let mut parent = vec![vec![0_usize; n]; 1 << n];
+
+        // Base case: starting at city 0 (mask = 1)
+        dp[1][0] = 0.0;
+
+        // Populating the DP table
+        for mask in 1..(1 << n) {
+            // Only considering states that include our starting city 0
+            if mask & 1 == 0 { continue; }
+
+            for u in 0..n {
+                // If city u is in the current mask
+                if (mask & (1 << u)) != 0 {
+                    // Try to reach u from any other city v in the mask
+                    for v in 0..n {
+                        if u != v && (mask & (1 << v)) != 0 {
+                            let prev_mask = mask ^ (1 << u);
+                            let cost = dp[prev_mask][v] + dist[v][u];
+                            if cost < dp[mask][u] {
+                                dp[mask][u] = cost;
+                                parent[mask][u] = v;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Findint the optimal return path back to city 0
+        let final_mask = (1 << n) - 1;
+        let mut min_cost = f32::INFINITY;
+        let mut last_city = 0;
+
+        for u in 1..n {
+            let cost = dp[final_mask][u] + dist[u][0];
+            if cost < min_cost {
+                min_cost = cost;
+                last_city = u;
+            }
+        }
+
+        // Reconstructing the optimal tour
+        let mut best_tour = Vec::new();
+        let mut curr_mask = final_mask;
+        let mut curr_city = last_city;
+
+        while curr_city != 0 {
+            best_tour.push(curr_city);
+            let next_city = parent[curr_mask][curr_city];
+            curr_mask ^= 1 << curr_city;
+            curr_city = next_city;
+        }
+        best_tour.push(0);
+        best_tour.reverse(); // Flip it so the tour begins at 0
+
+        // Applying the optimal results to the state
+        self.tour = best_tour;
+        self.dist = min_cost;
+        
+        false
+    }
+}
+
+fn test_algs() {
+    let min_cities: usize = 4;
+    let max_cities: usize = 20;
+    let n_tests: usize = 10;
+    let n_algs: usize = 3;
+
+    let mut times: Vec<Vec<Vec<f32>>> = Vec::new();
+    for i in 0..n_algs {
+        let helper: Vec<Vec<f32>> = Vec::new();
+        times.push(helper);
+        for j in 0..=max_cities {
+            let helper: Vec<f32> = Vec::new();
+            times[i].push(helper);
+            for k in 0..n_tests {
+                times[i][j].push(0.0);
+            }
+        }
+    }
+
+    let mut results: Vec<Vec<Vec<f32>>> = Vec::new();
+    for i in 0..n_algs {
+        let helper: Vec<Vec<f32>> = Vec::new();
+        results.push(helper);
+        for j in 0..=max_cities {
+            let helper: Vec<f32> = Vec::new();
+            results[i].push(helper);
+            for k in 0..n_tests {
+                results[i][j].push(0.0);
+            }
+        }
+    }
+
+    let mut state = State::new(min_cities);
+    state.randomize();
+    for cities in min_cities..=max_cities {
+        for nth in 0..n_tests {
+            for alg in 0..n_algs {
+                state.randomize_tour();
+                state.alg = match alg {
+                    0_usize => Alg::SA,
+                    1_usize => Alg::TWO_OPT,
+                    2_usize => Alg::CLASSICAL,
+                    _ => unreachable!(),
+                };
+                let mut not_done = true;
+                let now = Instant::now();
+
+                while not_done {
+                    match alg {
+                        0_usize => not_done = state.update_sa(),
+                        1_usize => not_done = state.update_two_opt(),
+                        2_usize => not_done = state.update_classical(),
+                        _ => unreachable!(),
+                    };
+                }
+
+                let elapsed = now.elapsed().as_secs_f32() * 1000.0;
+
+                times[alg][cities][nth] = elapsed;
+                results[alg][cities][nth] = state.dist;
+                println!("{} {} {} {}", alg, cities, nth, elapsed);
+            }
+        }
+        state.add_city();
+    }
+
+    for alg in 0..3 {
+        let mut time_per_cities = Vec::new();
+        let mut result_per_cities = Vec::new();
+        for cities in 0..=max_cities {
+            let mut sum_times = 0.0;
+            let mut sum_results = 0.0;
+            for nth in 0..n_tests {
+                sum_times += times[alg][cities][nth];
+                sum_results += results[alg][cities][nth];
+            }
+            time_per_cities.push(sum_times/(max_cities - min_cities + 1) as f32);
+            result_per_cities.push(sum_results/(max_cities - min_cities + 1) as f32);
+        }
+        if alg == 0 {
+            println!("Simulated Annealing");
+        }
+        else if alg == 1 {
+            println!("2-Opt");
+        }
+        else {
+            println!("Classical");
+        }
+        println!("Times:");
+        if DEBUG_OUTPUT {
+            for i in 0..time_per_cities.len() {
+                println!("{} {}", i, time_per_cities[i]);
+            }
+        }
+        else {
+            for i in 0..time_per_cities.len() {
+                println!("{} cities: {} avg time", i, time_per_cities[i]);
+            }
+        }
+        println!("Results:");
+        if DEBUG_OUTPUT {
+            for i in 0..result_per_cities.len() {
+                println!("{} {}", i, result_per_cities[i]);
+            }
+        }
+        else {
+            for i in 0..result_per_cities.len() {
+                println!("{} cities: {} avg result", i, result_per_cities[i]);
+            }
+        }
+        println!("");
+    }
 }
 
 #[macroquad::main("Travelling Salesman Problem")]
 async fn main() {
 
-    let mut state = State::new(100);
+    test_algs();
+
+    let mut state = State::new(4);
     state.randomize();
+    let mut working_next_frame = false;
 
     // Main loop
     loop {
@@ -206,10 +422,12 @@ async fn main() {
             state.running = false;
         }
         if is_key_pressed(KeyCode::A) {
+            state.randomize_tour();
             state.alg = Alg::SA;
             state.running = true;
         }
         if is_key_pressed(KeyCode::T) {
+            state.randomize_tour();
             state.alg = Alg::TWO_OPT;
             state.running = true;
         }
@@ -220,14 +438,24 @@ async fn main() {
         if is_key_pressed(KeyCode::S) {
             state.running = false;
         }
+        if is_key_pressed(KeyCode::C) {
+            state.running = true;
+            state.alg = Alg::CLASSICAL;
+            working_next_frame = true;
+        }
+        if is_key_pressed(KeyCode::N) {
+            state.add_city();
+        }
+        
 
         // Rendering
         clear_background(LIGHTGRAY);
-        
         state.display();
+
+        // if it has to work it works
         if state.running == true {
             if matches!(state.alg, Alg::SA) {
-                for _i in 0..100 {
+                for _i in 0..10000 {
                     if !state.update_sa() {
                         state.running = false;
                     }
@@ -238,6 +466,18 @@ async fn main() {
                     if !state.update_two_opt() {
                         state.running = false;
                     }
+                }
+            }
+            else if matches!(state.alg, Alg::CLASSICAL) {
+                if !working_next_frame {
+                    for _i in 0..1 {
+                        if !state.update_classical() {
+                            state.running = false;
+                        }
+                    }
+                }
+                else {
+                    working_next_frame = false;
                 }
             }
         }
