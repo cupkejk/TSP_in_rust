@@ -1,9 +1,10 @@
 use macroquad::prelude::*;
 use ::rand::{rng, RngExt, rngs::ThreadRng};
 use std::time::Instant;
+use std::env;
 
 const BORDER: f32 = 50.0;
-const DEBUG_OUTPUT: bool = true;
+const DEBUG_OUTPUT: bool = false;
 
 enum Alg {
     SA,
@@ -288,9 +289,8 @@ impl State {
     }
 }
 
-fn test_algs() {
+fn test_algs(max_cities: usize) {
     let min_cities: usize = 4;
-    let max_cities: usize = 20;
     let n_tests: usize = 10;
     let n_algs: usize = 3;
 
@@ -383,7 +383,7 @@ fn test_algs() {
             }
         }
         else {
-            for i in 0..time_per_cities.len() {
+            for i in min_cities..time_per_cities.len() {
                 println!("{} cities: {} avg time", i, time_per_cities[i]);
             }
         }
@@ -394,7 +394,7 @@ fn test_algs() {
             }
         }
         else {
-            for i in 0..result_per_cities.len() {
+            for i in min_cities..result_per_cities.len() {
                 println!("{} cities: {} avg result", i, result_per_cities[i]);
             }
         }
@@ -405,9 +405,29 @@ fn test_algs() {
 #[macroquad::main("Travelling Salesman Problem")]
 async fn main() {
 
-    test_algs();
+    let args: Vec<String> = env::args().collect();
+    let mut n_cities: usize = 4;
 
-    let mut state = State::new(4);
+    // arguments handling
+    if args.len() > 1 {
+        if args[1] == "--test" {
+            if args.len() > 2 {
+                let max_cities = args[2].parse().unwrap_or(4);
+                test_algs(max_cities);
+            }
+            else {
+                test_algs(10);
+            }
+            return;
+        }
+        if args[1] == "--cities" {
+            if args.len() > 2 {
+                n_cities = args[2].parse().unwrap_or(4);
+            }
+        }
+    }
+
+    let mut state = State::new(n_cities);
     state.randomize();
     let mut working_next_frame = false;
 
@@ -452,7 +472,7 @@ async fn main() {
         clear_background(LIGHTGRAY);
         state.display();
 
-        // if it has to work it works
+        // if state.running == true, the algorithm is running
         if state.running == true {
             if matches!(state.alg, Alg::SA) {
                 for _i in 0..10000 {
