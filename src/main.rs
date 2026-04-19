@@ -164,7 +164,7 @@ impl State {
         for i in 0..self.tour.len() {
             let c1 = self.cities[self.tour[i]];
             let c2 = self.cities[self.tour[(i + 1)%self.tour.len()]];
-            draw_line(c1[0], c1[1], c2[0], c2[1], 1.0, BLACK);
+            draw_line(c1[0], c1[1], c2[0], c2[1], 1.0, WHITE);
         }
 
         // Displaying the cities as circles
@@ -174,11 +174,11 @@ impl State {
         }
 
         let running_text = if self.running {&"State: running"} else {&"State: Done"};
-        let running_color = if self.running {RED} else {DARKGREEN};
+        let running_color = if self.running {RED} else {GREEN};
         let running_dims = measure_text(running_text, None, 30, 1.0);
 
-        draw_text(&format!("Temp: {:.5}", self.temp), 20.0, 20.0, 30.0, BLACK);
-        draw_text(&format!("Distance: {:.2}", self.dist), 20.0, 40.0, 30.0, BLACK);
+        draw_text(&format!("Temp: {:.5}", self.temp), 20.0, 20.0, 30.0, WHITE);
+        draw_text(&format!("Distance: {:.2}", self.dist), 20.0, 40.0, 30.0, WHITE);
         draw_text(running_text, screen_width() - 20.0 - running_dims.width, 20.0, 30.0, running_color);
     }
 
@@ -469,7 +469,7 @@ async fn main() {
         
 
         // Rendering
-        clear_background(LIGHTGRAY);
+        clear_background(Color::from_rgba(33, 33, 33, 255));
         state.display();
 
         // if state.running == true, the algorithm is running
